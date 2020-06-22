@@ -1,15 +1,14 @@
 name: FOSSA pr
 
 on:
-  pull_request:
-    types: [opened]
-  issue_comment:
-    types: [created]
+  pull_request_review:
+    types: [submitted]
+    branches: [master]
 
 jobs:
   build:
     runs-on: self-hosted
-    if: (github.event.comment.body == '/run all' && (github.actor == 'zroubalik' || github.actor == 'ahmelsayed')) || github.actor == 'zroubalik' || github.actor == 'ahmelsayed'
+    if: github.event.review.state == 'approved'
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
