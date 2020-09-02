@@ -32,9 +32,9 @@ var testRedisMetadata = []parseRedisMetadataTestData{
 	// improperly formed listLength
 	{map[string]string{"listName": "mylist", "listLength": "AA", "address": "REDIS_HOST", "password": ""}, true, map[string]string{}},
 	// address does not resolve
-	{map[string]string{"listName": "mylist", "listLength": "0", "address": "REDIS_WRONG", "password": ""}, true, map[string]string{}},
+	{map[string]string{"listName": "mylist", "listLength": "0", "addressFromEnv": "REDIS_WRONG", "password": ""}, true, map[string]string{}},
 	// password is defined in the authParams
-	{map[string]string{"listName": "mylist", "listLength": "0", "address": "REDIS_WRONG"}, true, map[string]string{"password": ""}},
+	{map[string]string{"listName": "mylist", "listLength": "0", "addressFromEnv": "REDIS_WRONG"}, true, map[string]string{"password": ""}},
 }
 
 func TestRedisParseMetadata(t *testing.T) {

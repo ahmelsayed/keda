@@ -343,7 +343,7 @@ func buildScaler(name, namespace, triggerType string, resolvedEnv, triggerMetada
 	case "rabbitmq":
 		return scalers.NewRabbitMQScaler(resolvedEnv, triggerMetadata, authParams)
 	case "azure-eventhub":
-		return scalers.NewAzureEventHubScaler(resolvedEnv, triggerMetadata)
+		return scalers.NewAzureEventHubScaler(resolvedEnv, triggerMetadata, authParams)
 	case "prometheus":
 		return scalers.NewPrometheusScaler(resolvedEnv, triggerMetadata)
 	case "redis":
@@ -351,9 +351,9 @@ func buildScaler(name, namespace, triggerType string, resolvedEnv, triggerMetada
 	case "gcp-pubsub":
 		return scalers.NewPubSubScaler(resolvedEnv, triggerMetadata)
 	case "external":
-		return scalers.NewExternalScaler(name, namespace, triggerMetadata)
+		return scalers.NewExternalScaler(name, namespace, triggerMetadata, resolvedEnv)
 	case "external-push":
-		return scalers.NewExternalPushScaler(name, namespace, triggerMetadata)
+		return scalers.NewExternalPushScaler(name, namespace, triggerMetadata, resolvedEnv)
 	case "liiklus":
 		return scalers.NewLiiklusScaler(resolvedEnv, triggerMetadata)
 	case "stan":

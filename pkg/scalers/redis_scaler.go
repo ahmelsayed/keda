@@ -18,27 +18,27 @@ import (
 const (
 	listLengthMetricName    = "RedisListLength"
 	defaultTargetListLength = 5
-	defaultRedisAddress     = "redis-master.default.svc.cluster.local:6379"
-	defaultRedisPassword    = ""
 	defaultDbIdx            = 0
 	defaultEnableTLS        = false
-	defaultHost             = ""
-	defaultPort             = ""
 )
 
 type redisScaler struct {
 	metadata *redisMetadata
 }
 
+type redisConnectionInfo struct {
+	address   string
+	password  string
+	host      string
+	port      string
+	enableTLS bool
+}
+
 type redisMetadata struct {
 	targetListLength int
 	listName         string
-	address          string
-	password         string
-	host             string
-	port             string
 	databaseIndex    int
-	enableTLS        bool
+	connectionInfo   redisConnectionInfo
 }
 
 var redisLog = logf.Log.WithName("redis_scaler")
@@ -56,7 +56,13 @@ func NewRedisScaler(resolvedEnv, metadata, authParams map[string]string) (Scaler
 }
 
 func parseRedisMetadata(metadata, resolvedEnv, authParams map[string]string) (*redisMetadata, error) {
-	meta := redisMetadata{}
+	connInfo, err := parseRedisAddress(metadata, resolvedEnv, authParams)
+	if err != nil {
+		return nil, err
+	}
+	meta := redisMetadata{
+		connectionInfo: connInfo,
+	}
 	meta.targetListLength = defaultTargetListLength
 
 	if val, ok := metadata["listLength"]; ok {
@@ -73,50 +79,6 @@ func parseRedisMetadata(metadata, resolvedEnv, authParams map[string]string) (*r
 		return nil, fmt.Errorf("no list name given")
 	}
 
-	address := defaultRedisAddress
-	host := defaultHost
-	port := defaultPort
-	if val, ok := metadata["address"]; ok && val != "" {
-		address = val
-	} else {
-		if val, ok := metadata["host"]; ok && val != "" {
-			host = val
-		} else {
-			return nil, fmt.Errorf("no address or host given. address should be in the format of host:port or you should set the host/port values")
-		}
-		if val, ok := metadata["port"]; ok && val != "" {
-			port = val
-		} else {
-			return nil, fmt.Errorf("no address or port given. address should be in the format of host:port or you should set the host/port values")
-		}
-	}
-
-	if val, ok := resolvedEnv[address]; ok {
-		meta.address = val
-	} else {
-		if val, ok := resolvedEnv[host]; ok {
-			meta.host = val
-		} else {
-			return nil, fmt.Errorf("no address given or host given. Address should be in the format of host:port or you should provide both host and port")
-		}
-
-		if val, ok := resolvedEnv[port]; ok {
-			meta.port = val
-		} else {
-			return nil, fmt.Errorf("no address or port given. Address should be in the format of host:port or you should provide both host and port")
-		}
-		meta.address = fmt.Sprintf("%s:%s", meta.host, meta.port)
-	}
-
-	meta.password = defaultRedisPassword
-	if val, ok := authParams["password"]; ok {
-		meta.password = val
-	} else if val, ok := metadata["password"]; ok && val != "" {
-		if passd, ok := resolvedEnv[val]; ok {
-			meta.password = passd
-		}
-	}
-
 	meta.databaseIndex = defaultDbIdx
 	if val, ok := metadata["databaseIndex"]; ok {
 		dbIndex, err := strconv.ParseInt(val, 10, 64)
@@ -126,15 +88,6 @@ func parseRedisMetadata(metadata, resolvedEnv, authParams map[string]string) (*r
 		meta.databaseIndex = int(dbIndex)
 	}
 
-	meta.enableTLS = defaultEnableTLS
-	if val, ok := metadata["enableTLS"]; ok {
-		tls, err := strconv.ParseBool(val)
-		if err != nil {
-			return nil, fmt.Errorf("enableTLS parsing error %s", err.Error())
-		}
-		meta.enableTLS = tls
-	}
-
 	return &meta, nil
 }
 
@@ -142,7 +95,7 @@ func parseRedisMetadata(metadata, resolvedEnv, authParams map[string]string) (*r
 func (s *redisScaler) IsActive(ctx context.Context) (bool, error) {
 
 	length, err := getRedisListLength(
-		ctx, s.metadata.address, s.metadata.password, s.metadata.listName, s.metadata.databaseIndex, s.metadata.enableTLS)
+		ctx, s.metadata.connectionInfo.address, s.metadata.connectionInfo.password, s.metadata.listName, s.metadata.databaseIndex, s.metadata.connectionInfo.enableTLS)
 
 	if err != nil {
 		redisLog.Error(err, "error")
@@ -176,7 +129,7 @@ func (s *redisScaler) GetMetricSpecForScaling() []v2beta2.MetricSpec {
 
 // GetMetrics connects to Redis and finds the length of the list
 func (s *redisScaler) GetMetrics(ctx context.Context, metricName string, metricSelector labels.Selector) ([]external_metrics.ExternalMetricValue, error) {
-	listLen, err := getRedisListLength(ctx, s.metadata.address, s.metadata.password, s.metadata.listName, s.metadata.databaseIndex, s.metadata.enableTLS)
+	listLen, err := getRedisListLength(ctx, s.metadata.connectionInfo.address, s.metadata.connectionInfo.password, s.metadata.listName, s.metadata.databaseIndex, s.metadata.connectionInfo.enableTLS)
 
 	if err != nil {
 		redisLog.Error(err, "error getting list length")
@@ -213,4 +166,46 @@ func getRedisListLength(ctx context.Context, address string, password string, li
 		return -1, cmd.Err()
 	}
 	return cmd.Result()
+}
+
+func parseRedisAddress(metadata, resolvedEnv, authParams map[string]string) (redisConnectionInfo, error) {
+	info := redisConnectionInfo{}
+	if authParams["address"] != "" {
+		info.address = authParams["address"]
+	} else if metadata["address"] != "" {
+		info.address = metadata["address"]
+	} else if metadata["addressFromEnv"] != "" {
+		info.address = resolvedEnv[metadata["addressFromEnv"]]
+	} else if metadata["host"] != "" && metadata["port"] != "" {
+		info.host = metadata["host"]
+		info.port = metadata["port"]
+		info.address = fmt.Sprintf("%s:%s", info.host, info.port)
+	} else if metadata["hostFromEnv"] != "" && metadata["port"] != "" {
+		info.host = resolvedEnv[metadata["hostFromEnv"]]
+		info.port = metadata["port"]
+		info.address = fmt.Sprintf("%s:%s", info.host, info.port)
+	}
+
+	if len(info.address) == 0 {
+		return info, fmt.Errorf("no address or host given. address should be in the format of host:port or you should set the host/port values")
+	}
+
+	if authParams["password"] != "" {
+		info.password = authParams["password"]
+	} else if metadata["password"] != "" {
+		info.password = metadata["password"]
+	} else if metadata["passwordFromEnv"] != "" {
+		info.password = resolvedEnv[metadata["passwordFromEnv"]]
+	}
+
+	info.enableTLS = defaultEnableTLS
+	if val, ok := metadata["enableTLS"]; ok {
+		tls, err := strconv.ParseBool(val)
+		if err != nil {
+			return info, fmt.Errorf("enableTLS parsing error %s", err.Error())
+		}
+		info.enableTLS = tls
+	}
+
+	return info, nil
 }
