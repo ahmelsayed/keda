@@ -3,6 +3,7 @@ package scalers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	pb "github.com/kedacore/keda/pkg/scalers/externalscaler"
 	"google.golang.org/grpc"
@@ -88,8 +89,10 @@ func parseExternalScalerMetadata(metadata, resolvedEnv map[string]string) (*exte
 	// Add elements to metadata
 	for key, value := range metadata {
 		// Check if key is in resolved environment and resolve
-		if val, ok := resolvedEnv[value]; ok && val != "" {
-			meta.metadata[key] = val
+		if strings.HasSuffix(key, "FromEnv") {
+			if val, ok := resolvedEnv[value]; ok && val != "" {
+				meta.metadata[key] = val
+			}
 		} else {
 			meta.metadata[key] = value
 		}

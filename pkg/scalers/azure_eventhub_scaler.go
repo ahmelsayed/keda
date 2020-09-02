@@ -20,13 +20,12 @@ import (
 )
 
 const (
-	defaultEventHubMessageThreshold  = 64
-	eventHubMetricType               = "External"
-	thresholdMetricName              = "unprocessedEventThreshold"
-	defaultEventHubConsumerGroup     = "$Default"
-	defaultEventHubConnectionSetting = "EventHub"
-	defaultStorageConnectionSetting  = "AzureWebJobsStorage"
-	defaultBlobContainer             = ""
+	defaultEventHubMessageThreshold = 64
+	eventHubMetricType              = "External"
+	thresholdMetricName             = "unprocessedEventThreshold"
+	defaultEventHubConsumerGroup    = "$Default"
+	//defaultEventHubConnectionSetting = "EventHub"
+	defaultBlobContainer = ""
 )
 
 var eventhubLog = logf.Log.WithName("azure_eventhub_scaler")
@@ -42,8 +41,8 @@ type EventHubMetadata struct {
 }
 
 // NewAzureEventHubScaler creates a new scaler for eventHub
-func NewAzureEventHubScaler(resolvedEnv, metadata map[string]string) (Scaler, error) {
-	parsedMetadata, err := parseAzureEventHubMetadata(metadata, resolvedEnv)
+func NewAzureEventHubScaler(resolvedEnv, metadata, authParams map[string]string) (Scaler, error) {
+	parsedMetadata, err := parseAzureEventHubMetadata(metadata, resolvedEnv, authParams)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get eventhub metadata: %s", err)
 	}
@@ -60,7 +59,7 @@ func NewAzureEventHubScaler(resolvedEnv, metadata map[string]string) (Scaler, er
 }
 
 // parseAzureEventHubMetadata parses metadata
-func parseAzureEventHubMetadata(metadata, resolvedEnv map[string]string) (*EventHubMetadata, error) {
+func parseAzureEventHubMetadata(metadata, resolvedEnv, authParams map[string]string) (*EventHubMetadata, error) {
 	meta := EventHubMetadata{
 		eventHubInfo: azure.EventHubInfo{},
 	}
@@ -75,25 +74,27 @@ func parseAzureEventHubMetadata(metadata, resolvedEnv map[string]string) (*Event
 		meta.threshold = threshold
 	}
 
-	storageConnectionSetting := defaultStorageConnectionSetting
-	if val, ok := metadata["storageConnection"]; ok && val != "" {
-		storageConnectionSetting = val
+	if authParams["storageConnection"] != "" {
+		meta.eventHubInfo.StorageConnection = authParams["storageConnection"]
+	} else if metadata["storageConnection"] != "" {
+		meta.eventHubInfo.StorageConnection = metadata["storageConnection"]
+	} else if metadata["storageConnectionFromEnv"] != "" {
+		meta.eventHubInfo.StorageConnection = resolvedEnv[metadata["storageConnectionFromEnv"]]
 	}
 
-	if val, ok := resolvedEnv[storageConnectionSetting]; ok {
-		meta.eventHubInfo.StorageConnection = val
-	} else {
+	if len(meta.eventHubInfo.StorageConnection) == 0 {
 		return nil, fmt.Errorf("no storage connection string given")
 	}
 
-	eventHubConnectionSetting := defaultEventHubConnectionSetting
-	if val, ok := metadata["connection"]; ok && val != "" {
-		eventHubConnectionSetting = val
+	if authParams["connection"] != "" {
+		meta.eventHubInfo.EventHubConnection = authParams["connection"]
+	} else if metadata["connection"] != "" {
+		meta.eventHubInfo.EventHubConnection = metadata["connection"]
+	} else if metadata["connectionFromEnv"] != "" {
+		meta.eventHubInfo.EventHubConnection = resolvedEnv[metadata["connectionFromEnv"]]
 	}
 
-	if val, ok := resolvedEnv[eventHubConnectionSetting]; ok {
-		meta.eventHubInfo.EventHubConnection = val
-	} else {
+	if len(meta.eventHubInfo.EventHubConnection) == 0 {
 		return nil, fmt.Errorf("no event hub connection string given")
 	}
 
@@ -114,7 +115,7 @@ func parseAzureEventHubMetadata(metadata, resolvedEnv map[string]string) (*Event
 func (scaler *AzureEventHubScaler) GetUnprocessedEventCountInPartition(ctx context.Context, partitionInfo *eventhub.HubPartitionRuntimeInformation) (newEventCount int64, checkpoint azure.Checkpoint, err error) {
 
 	//if partitionInfo.LastEnqueuedOffset = -1, that means event hub partition is empty
-	if partitionInfo!= nil && partitionInfo.LastEnqueuedOffset == "-1" {		
+	if partitionInfo != nil && partitionInfo.LastEnqueuedOffset == "-1" {
 		return 0, azure.Checkpoint{}, nil
 	}
 
@@ -143,13 +144,13 @@ func (scaler *AzureEventHubScaler) GetUnprocessedEventCountInPartition(ctx conte
 	if partitionInfo.LastSequenceNumber >= checkpoint.SequenceNumber {
 		unprocessedEventCountInPartition = partitionInfo.LastSequenceNumber - checkpoint.SequenceNumber
 		return unprocessedEventCountInPartition, checkpoint, nil
-	}	
-	
-	// Partition is a circular buffer, so it is possible that
-    // partitionInfo.LastSequenceNumber < blob checkpoint's SequenceNumber
-	unprocessedEventCountInPartition = (math.MaxInt64 - partitionInfo.LastSequenceNumber) + checkpoint.SequenceNumber	
+	}
 
-	// Checkpointing may or may not be always behind partition's LastSequenceNumber.  
+	// Partition is a circular buffer, so it is possible that
+	// partitionInfo.LastSequenceNumber < blob checkpoint's SequenceNumber
+	unprocessedEventCountInPartition = (math.MaxInt64 - partitionInfo.LastSequenceNumber) + checkpoint.SequenceNumber
+
+	// Checkpointing may or may not be always behind partition's LastSequenceNumber.
 	// The partition information read could be stale compared to checkpoint,
 	// especially when load is very small and checkpointing is happening often.
 	// e.g., (9223372036854775807 - 10) + 11 = -9223372036854775808

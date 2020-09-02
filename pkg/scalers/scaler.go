@@ -2,7 +2,6 @@ package scalers
 
 import (
 	"context"
-
 	v2beta1 "k8s.io/api/autoscaling/v2beta1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/metrics/pkg/apis/external_metrics"

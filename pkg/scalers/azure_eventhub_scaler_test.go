@@ -63,7 +63,7 @@ var testEventHubScaler = AzureEventHubScaler{
 func TestParseEventHubMetadata(t *testing.T) {
 	// Test first with valid resolved environment
 	for _, testData := range parseEventHubMetadataDataset {
-		_, err := parseAzureEventHubMetadata(testData.metadata, sampleEventHubResolvedEnv)
+		_, err := parseAzureEventHubMetadata(testData.metadata, sampleEventHubResolvedEnv, map[string]string{})
 
 		if err != nil && !testData.isError {
 			t.Errorf("Expected success but got error: %s", err)

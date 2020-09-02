@@ -327,7 +327,7 @@ func (h *ScaleHandler) getScaler(name, namespace, triggerType string, resolvedEn
 	case "rabbitmq":
 		return scalers.NewRabbitMQScaler(resolvedEnv, triggerMetadata, authParams)
 	case "azure-eventhub":
-		return scalers.NewAzureEventHubScaler(resolvedEnv, triggerMetadata)
+		return scalers.NewAzureEventHubScaler(resolvedEnv, triggerMetadata, authParams)
 	case "prometheus":
 		return scalers.NewPrometheusScaler(resolvedEnv, triggerMetadata)
 	case "cron":
